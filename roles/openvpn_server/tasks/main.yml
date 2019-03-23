@@ -1,0 +1,96 @@
+# openvpn packages
+- name: Install openvpn packages
+  yum: name={{ item }} enablerepo=epel state=present
+  with_items:
+    - openvpn
+    - firewalld
+  become: yes
+
+- name: Setup openvpn directories
+  become: yes
+  block:
+    - name: Create openvpn certificate Directory
+      file: dest=/etc/openvpn/server/certs state=directory owner=root group=root mode=0700
+    - name: Create openvpn log Directory
+      file: dest=/var/log/openvpn state=directory owner=root group=root mode=0755
+    - name: Cache openvpn cache directory
+      file: dest=/var/lib/openvpn state=directory owner=root group=root mode=0755
+
+- name: Main openvpn config
+  template: src=server.conf dest=/etc/openvpn/server/server.conf
+  become: yes
+
+- name: Diffie hellman parameters
+  become: yes
+  block:
+    - name: Check for dh2048 file
+      stat:
+        path: /etc/openvpn/server/certs/dh2048.pem
+      register: dh2048
+    - name: Create dh2048 file
+      command: openssl dhparam -out /etc/openvpn/server/certs/dh2048.pem 2048
+      when: dh2048.stat.exists == False
+
+- name: Certificate Configuration
+  become: yes
+  block:
+    - name: TA Key
+      copy:
+        content: "{{ openvpn_ta_key }}"
+        dest: /etc/openvpn/server/certs/ta.key
+        owner: root
+        group: root
+        mode: 0600
+    - name: CA Crt
+      copy:
+        content: "{{ openvpn_ca_crt }}"
+        dest: /etc/openvpn/server/certs/ca.crt
+        owner: root
+        group: root
+        mode: 0600
+    - name: Server Crt
+      copy:
+        content: "{{ openvpn_server_crt }}"
+        dest: /etc/openvpn/server/certs/vpn.crt
+        owner: root
+        group: root
+        mode: 0600
+    - name: Server Key
+      copy:
+        content: "{{ openvpn_server_key }}"
+        dest: /etc/openvpn/server/certs/vpn.key
+        owner: root
+        group: root
+        mode: 0600
+
+- service: 
+    name: openvpn-server@server 
+    enabled: yes 
+  become: yes
+
+# Set ip forwarding on in /proc and in the sysctl file and reload if necessary
+- sysctl: 
+     name: "net.ipv4.ip_forward" 
+     value: 1 
+     sysctl_set: yes 
+     state: present 
+     reload: yes
+  become: yes
+
+- name: Setup firewalld masquerading
+  become: yes
+  block:
+    - service:
+        name: firewalld
+        state: started
+        enabled: true
+    - firewalld:
+        service: openvpn
+        permanent: true
+        state: enabled
+        immediate: true
+    - firewalld:
+        masquerade: yes
+        state: enabled
+        permanent: true
+        immediate: true

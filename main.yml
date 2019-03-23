@@ -1,0 +1,7 @@
+- name: Configures the openvpn server
+  hosts: all
+  become_method: sudo
+  become_user: root
+
+  roles: 
+    - openvpn_server
